@@ -1,0 +1,39 @@
+{
+  "expo": {
+    "name": "Spectech Operator",
+    "slug": "spectech-operator",
+    "scheme": "spectech-operator",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.spectech.operator"
+    },
+    "android": {
+      "package": "com.spectech.operator",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Spectech uses your location to tag work reports with the site GPS position."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Spectech needs photo access to attach work-site photos to reports.",
+          "cameraPermission": "Spectech needs camera access to capture work-site photos for reports."
+        }
+      ]
+    ]
+  }
+}
