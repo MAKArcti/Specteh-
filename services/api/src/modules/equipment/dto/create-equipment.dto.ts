@@ -1,5 +1,5 @@
 import { EquipmentType } from '@spectech/shared-types';
-import { IsEnum, IsNumber, IsString, Max, Min } from 'class-validator';
+import { IsEnum, IsNumber, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
 
 export class CreateEquipmentDto {
   @IsEnum(EquipmentType)
@@ -21,4 +21,36 @@ export class CreateEquipmentDto {
   @Min(-180)
   @Max(180)
   lng: number;
+
+  @IsOptional()
+  @IsString()
+  brand?: string;
+
+  @IsOptional()
+  @IsString()
+  model?: string;
+
+  @IsOptional()
+  @IsString()
+  serialNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  photoUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  mass?: string;
+
+  @IsOptional()
+  @IsString()
+  capacity?: string;
+
+  @IsOptional()
+  @IsString()
+  conditions?: string;
+
+  @IsOptional()
+  @IsUUID()
+  operatorId?: string;
 }

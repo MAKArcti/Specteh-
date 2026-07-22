@@ -2,26 +2,24 @@ import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { DealStatus, DomainEvent, ReportSyncStatus } from '@spectech/shared-types';
+import { DomainEvent, OrderStatus, ReportSyncStatus } from '@spectech/shared-types';
 import { Job } from 'bullmq';
 import { Repository } from 'typeorm';
-import { DealsService } from '../deals/deals.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { OrdersService } from '../orders/orders.service';
 import { REPORT_INGESTION_QUEUE } from './reports-sync.service';
 import { ReportEntity } from './report.entity';
-
-export interface ReportIngestedPayload {
-  reportId: string;
-  dealId: string;
-}
 
 interface IngestReportJobData {
   reportId: string;
 }
 
 /**
- * Ingestion pipeline step 3 ("Обробка" in the architecture deck): validates
- * a queued report against its claimed deal and geo-binds it, independent of
- * whether the operator was online when the report was captured.
+ * Ingestion pipeline step 3 ("Обробка" in the architecture deck): validates a
+ * queued report against its claimed order and geo-binds it, independent of
+ * whether the operator was online when the report was captured. Does not
+ * itself flip the order to IN_WORK — the operator's explicit "start work"
+ * action (OrdersService.startContract) already did that.
  */
 @Processor(REPORT_INGESTION_QUEUE)
 export class ReportsIngestionProcessor extends WorkerHost {
@@ -30,7 +28,8 @@ export class ReportsIngestionProcessor extends WorkerHost {
   constructor(
     @InjectRepository(ReportEntity)
     private readonly reportsRepository: Repository<ReportEntity>,
-    private readonly dealsService: DealsService,
+    private readonly ordersService: OrdersService,
+    private readonly notificationsService: NotificationsService,
     private readonly eventEmitter: EventEmitter2,
   ) {
     super();
@@ -43,8 +42,8 @@ export class ReportsIngestionProcessor extends WorkerHost {
       return;
     }
 
-    const deal = await this.dealsService.findById(report.dealId);
-    const rejectionReason = this.validateAgainstDeal(report, deal);
+    const order = await this.ordersService.findById(report.orderId);
+    const rejectionReason = this.validateAgainstOrder(report, order);
 
     if (rejectionReason) {
       await this.reportsRepository.update(
@@ -56,24 +55,28 @@ export class ReportsIngestionProcessor extends WorkerHost {
 
     await this.reportsRepository.update(
       { id: report.id },
-      { syncStatus: ReportSyncStatus.SYNCED },
+      { syncStatus: ReportSyncStatus.SYNCED, rejectionReason: undefined },
     );
 
-    await this.dealsService.advanceStatus(report.dealId, DealStatus.IN_PROGRESS);
-
-    await this.eventEmitter.emitAsync(DomainEvent.REPORT_INGESTED, {
+    if (order) {
+      await this.notificationsService.notify(order.ownerId, 'Новий звіт по роботі очікує підтвердження');
+    }
+    await this.eventEmitter.emitAsync(DomainEvent.ORDER_REPORT_SUBMITTED, {
       reportId: report.id,
-      dealId: report.dealId,
-    } satisfies ReportIngestedPayload);
+      orderId: report.orderId,
+    });
   }
 
-  private validateAgainstDeal(
+  private validateAgainstOrder(
     report: ReportEntity,
-    deal: Awaited<ReturnType<DealsService['findById']>>,
+    order: Awaited<ReturnType<OrdersService['findById']>>,
   ): string | undefined {
-    if (!deal) return 'Report references a deal that does not exist';
-    if (deal.operatorId !== report.operatorId) {
-      return 'Reporting operator does not match the deal operator';
+    if (!order) return 'Report references an order that does not exist';
+    if (order.operatorId !== report.operatorId) {
+      return 'Reporting operator does not match the order operator';
+    }
+    if (order.status !== OrderStatus.IN_WORK && order.status !== OrderStatus.DONE) {
+      return 'Order is not in an active contract';
     }
     return undefined;
   }

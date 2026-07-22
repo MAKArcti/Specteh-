@@ -4,20 +4,39 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Spectech is a marketplace platform for Ukraine's heavy-construction-equipment
-industry (excavators, cranes, bulldozers, dump trucks, etc.), built for the
-reconstruction economy. It connects customers who need equipment with
-equipment owners/operators, replacing phone-call-and-a-guy-who-knows-a-guy
-logistics with: geo/price/rating-ranked matching, escrow-style deal
-confirmation, and daily operator work reports (photo + GPS + work volume)
-that must be capturable **offline** and synced later — construction sites
-routinely have no connectivity.
+Spectech is a marketplace + fleet-management platform for Ukraine's
+heavy-construction-equipment industry (excavators, cranes, bulldozers, dump
+trucks, etc.), built for the reconstruction economy. It connects renters who
+need equipment with equipment owners and the operators who run it, replacing
+phone-call-and-a-guy-who-knows-a-guy logistics with structured requests, a
+manual owner-driven assign flow, an order-scoped chat, an electronic
+equipment "passport" + maintenance journal, and daily operator work reports
+(text + before/during/after photos + GPS + engine hours) that must be
+capturable **offline** and synced later — construction sites routinely have
+no connectivity.
 
-Product roadmap (source of truth for what's in scope right now):
-1. **Phase 1 — Marketplace** (built): requests → matching → deal confirmation.
-2. **Phase 1.5 — SaaS wedge** (built): fleet reports with photo/GPS, offline-first sync.
-3. **Phase 2 — Financial layer** (not built): escrow, leasing, insurance.
-4. **Phase 3 — Scale** (not built): new regions/verticals, data-as-a-product.
+**Two product generations coexist in this codebase, deliberately:**
+1. **The original vision-deck marketplace** (Phase 1/1.5 of the early
+   roadmap): auto-ranked matching engine (geo+price+rating), `Deal`
+   lifecycle, single-role users. This is what `apps/web` still runs against
+   — `requests/`, `matching/`, `deals/` modules, untouched.
+2. **The SoW-driven rental+fleet platform** (current product direction,
+   mobile-first per the SoW — web is explicitly out of scope for this
+   generation): multi-role accounts, no auto-matching (the owner manually
+   reviews a request and assigns their own equipment + operator), an
+   order-scoped chat, equipment passport/journal, notifications. This is
+   what `apps/mobile` runs against — `orders/`, `chat.controller.ts` (inside
+   `orders/`), `notifications/`, the expanded `equipment/`, and the reworked
+   `reports/` (now tied to `Order`, not `Deal`).
+
+They were kept side by side rather than migrated in place: `apps/web`'s
+contract (single `role`, `Deal`/`EquipmentRequest`/`MatchOffer`) still works
+unmodified, while the new modules were added alongside. `UserEntity.roles`
+replaced the old singular `role` column, but the JWT payload still carries
+`role` (first of `roles`) for `apps/web`'s back-compat alongside the new
+`roles` array. If you're asked to reconcile the two (e.g. retire the
+matching engine, or port `apps/web` onto the new model), that's a deliberate
+product decision to confirm first — don't do it as a drive-by refactor.
 
 Guiding principles from the product vision — keep these in mind when making
 architectural decisions, not just when writing code:
@@ -38,27 +57,46 @@ packages/shared-types              @spectech/shared-types — DTOs/enums shared 
 infra/          docker-compose.yml — Postgres+PostGIS and Redis for local dev
 ```
 
-`packages/shared-types` is the wire contract: enums (`UserRole`,
-`EquipmentType`, `EquipmentStatus`, `RequestStatus`, `DealStatus`,
-`ReportSyncStatus`, `WorkVolumeUnit`, `DomainEvent`) and interfaces (`User`,
-`Equipment`, `EquipmentRequest`, `MatchOffer`, `Deal`, `Report`,
-`ReportDraft`, `GeoPoint`, etc.) live here and get consumed with
+`packages/shared-types` is the wire contract and gets consumed with
 `"@spectech/shared-types": "workspace:*"`. Change a shape here first, then
-propagate to the API DTOs and both clients.
+propagate to the API DTOs and whichever client(s) use it.
 
-**Known contract wrinkle:** the shared `GeoPoint`-based interfaces
-(`CreateEquipmentRequestDto`, `ReportDraft`) nest coordinates as
-`location: { lat, lng }` / `gps: { lat, lng }`, but the actual NestJS
+- **Legacy marketplace types** (used only by `apps/web`, untouched):
+  `RequestStatus`, `DealStatus`, `EquipmentRequest`, `MatchOffer`, `Deal`,
+  `ConfirmDealDto`.
+- **SoW rental+fleet types** (used only by the rebuilt `apps/mobile`):
+  `OrderStatus`, `Order`, `CreateOrderDto`, `AssignOrderDto`,
+  `ChatMessage`, `SendChatMessageDto`, `Notification`,
+  `JournalEntryKind`, `EquipmentJournalEntry`, `CreateJournalEntryDto`.
+- **Shared by both**: `UserRole`, `EquipmentType`, `EquipmentStatus`,
+  `User` (now with `roles: UserRole[]`, plus a legacy singular `role`),
+  `Equipment` (now carrying the optional "техпаспорт" fields —
+  `brand`/`model`/`serialNumber`/`photoUrl`/`engineHours`/`fuelConsumption`/
+  `oilStatus`/`mass`/`capacity`/`conditions`/`assignedOperatorIds` — all
+  optional because the legacy web create-listing flow never populates them),
+  `GeoPoint`, `DomainEvent`.
+- **`Report`/`ReportDraft`** were reworked for the SoW report structure
+  (`orderId` instead of `dealId`, `text` + `photos: {before,during,after}`
+  instead of `photoUrls[]`, `startedAt`/`endedAt`/`durationMin`,
+  `problem`/`needsService` flags, a `confirmed` flag distinct from
+  `syncStatus`) — this was a breaking change to those two interfaces, safe
+  only because reports are exclusively an operator/mobile concern that
+  `apps/web` never touched.
+
+**Known contract wrinkle:** several `GeoPoint`-based interfaces nest
+coordinates as `location: { lat, lng }` / `gps: { lat, lng }`
+(`CreateEquipmentRequestDto`, `ReportDraft`), but the actual NestJS
 `class-validator` DTOs (`services/api/src/modules/requests/dto/create-request.dto.ts`,
-`.../reports/dto/report-draft.dto.ts`) validate **flat** `lat`/`lng` fields
-instead, because `class-validator` needs primitives to decorate directly.
-Both `apps/web` and `apps/mobile` bridge this explicitly at the API-call
-boundary (see `apps/web/src/api/requests.ts`, `apps/mobile/src/api/reports.ts`)
-rather than changing the shared interfaces — the persisted/local-queue shape
-stays nested (matches `Report`/`ReportDraft`), only the wire body is flattened.
-If you add another geo-bearing endpoint, follow the same pattern: keep the
-shared-types interface nested, add a local flat DTO class in the API module,
-and flatten at the call site in each client.
+`.../reports/dto/report-draft.dto.ts`, `.../equipment/dto/create-equipment.dto.ts`)
+validate **flat** `lat`/`lng` fields instead, because `class-validator` needs
+primitives to decorate directly. `apps/web` and `apps/mobile` bridge this
+explicitly at the API-call boundary (see `apps/web/src/api/requests.ts`,
+`apps/mobile/src/api/reports.ts`) rather than changing the shared
+interfaces — the persisted/local-queue shape stays nested (matches
+`Report`/`ReportDraft`), only the wire body is flattened. If you add another
+geo-bearing endpoint, follow the same pattern: keep the shared-types
+interface nested, add a local flat DTO class in the API module, and flatten
+at the call site in each client.
 
 ## Commands
 
@@ -132,16 +170,21 @@ modules calling each other's internals directly wherever that seam matters:
 
 ```
 modules/
-  auth/        JWT issuance (register/login), passport-jwt strategy, guards
-  users/       user records (role, rating)
-  equipment/   equipment listings + PostGIS proximity queries
-  requests/    customer "заявка" (equipment request) creation
-  matching/    ranks equipment candidates for a request (geo+price+rating)
-  deals/       deal lifecycle: confirm → in_progress → completed → settled
-  reports/     offline-sync batch intake + async ingestion pipeline
+  auth/           JWT issuance (register/login), passport-jwt strategy, guards
+  users/          user records (multi-role), GET /users/operators roster
+  equipment/      listings + PostGIS proximity + passport fields + journal +
+                  operator assignment (shared by both product generations)
+  requests/       [legacy] customer "заявка" creation — apps/web only
+  matching/       [legacy] ranks equipment candidates (geo+price+rating)
+  deals/          [legacy] deal lifecycle: confirm → in_progress → … → settled
+  orders/         [SoW] rental order lifecycle + nested order-chat controller
+  chat/           [SoW] ChatService only, no controller of its own (see below)
+  notifications/  [SoW] in-app notification inbox
+  reports/        offline-sync batch intake + async ingestion pipeline,
+                  reworked to hang off `orders/` (Deal-based version retired)
 ```
 
-**Request → match → deal flow:**
+**Legacy request → match → deal flow** (`apps/web` only, unchanged):
 1. `POST /requests` (`RequestsService.create`) persists the request, then
    `await eventEmitter.emitAsync(DomainEvent.REQUEST_CREATED, ...)`.
    Using `emitAsync` (not `emit`) is deliberate: it's awaited, so matching
@@ -152,52 +195,98 @@ modules/
    within the request's radius via `EquipmentService.findAvailableCandidates`
    (a PostGIS `ST_DWithin`/`ST_Distance` query), scores them with the pure,
    unit-tested function `matching.scoring.ts::scoreCandidates` (weighted:
-   distance 0.4 / price 0.3 / rating 0.3 — availability is a pre-filter, not
-   a scoring term, since candidates are already filtered to `AVAILABLE`),
-   and persists ranked `MatchOfferEntity` rows.
+   distance 0.4 / price 0.3 / rating 0.3), and persists ranked
+   `MatchOfferEntity` rows.
 3. `GET /requests/:requestId/offers` reads those back, ordered by rank.
 4. `POST /deals` (`DealsService.confirmFromOffer`) turns a chosen offer into
-   a `Deal`, marks the equipment `BOOKED`, and emits `DEAL_CONFIRMED`.
-   **MVP simplification:** the deal's `operatorId` is set to the equipment
-   owner's id — there's no separate "assign a hired operator to this
-   machine" flow yet. If that becomes a real feature, it changes
-   `DealsService.confirmFromOffer` and probably needs its own module.
+   a `Deal`, marks the equipment `BOOKED`, and emits `DEAL_CONFIRMED`. The
+   deal's `operatorId` is just the equipment owner's id — no separate
+   hired-operator assignment in this generation (that's what `orders/`
+   below adds properly).
 
-**Offline-first report ingestion (the other core flow):** mirrors the
-architecture deck's "sensor → ingestion → processing → action" pipeline:
+**SoW order → assign → contract → report flow** (`apps/mobile`, current
+product direction, per the SoW's "no auto-matching engine" requirement —
+the owner reviews and assigns manually):
+1. `POST /orders` (`OrdersService.create`) persists an `Order` at status
+   `request`. If the renter targeted a specific machine (from an equipment
+   detail screen), `ownerId` is set immediately from that equipment; if they
+   just requested "any excavator", `ownerId` stays `null` until an owner
+   claims it. `GET /orders/actionable` (an owner's "Потребують дій") returns
+   both: open unclaimed requests of any type, plus that owner's own
+   request/agreed orders.
+2. `POST /orders/:id/assign` (owner) requires the acting user to actually
+   own the equipment being assigned and the target user to have the
+   `OPERATOR` role; it enforces "equipment can't run two active orders" by
+   requiring the equipment to be `AVAILABLE` first. Moves `request` →
+   `agreed`, marks equipment `BOOKED`, posts a system chat message, notifies
+   both renter and operator.
+3. `POST /orders/:id/start-contract` (owner) enforces "an operator can't be
+   active on two orders at once" by checking for another order with the same
+   `operatorId` at `IN_WORK` before allowing the transition. Moves `agreed`
+   → `in_work`, marks equipment `WORKING`.
+4. The operator works and files reports via the same offline-sync pipeline
+   as before (see below), now keyed to `orderId` instead of `dealId`.
+   `POST /reports/:id/confirm` (owner) is what actually finishes the job:
+   it calls `OrdersService.completeFromReport`, moving `in_work` → `done`
+   and freeing the equipment back to `AVAILABLE` — there's no separate
+   "complete order" endpoint, confirming the report *is* closing it.
+5. **Chat** (`orders/chat.controller.ts`) is deliberately declared inside
+   `OrdersModule` rather than `ChatModule`, even though `ChatService` lives
+   in `ChatModule` — this lets it use `OrdersService` for access checks
+   (renter/owner always; the operator only once the order reaches
+   `IN_WORK`/`DONE`) without `ChatModule` needing to depend on `OrdersModule`
+   at all, keeping that module boundary one-directional.
+6. **Notifications** (`NotificationsService.notify`) are fired inline by
+   `OrdersService`/`ReportsIngestionProcessor` at each lifecycle step
+   (assigned, started, new report, done) — a simple in-app inbox
+   (`GET /notifications`, `POST /notifications/read-all`), no push delivery
+   yet.
+
+**Offline-first report ingestion** (shared shape, reworked for `orders/`):
+mirrors the architecture deck's "sensor → ingestion → processing → action"
+pipeline:
 1. `POST /reports/sync` (`ReportsSyncService.syncBatch`) is the batch intake
    the mobile app's local queue drains into. It's **idempotent per
-   `clientReportId`** (a client-generated UUID) — replaying an
-   already-synced batch after an unclear ack is a no-op, not a duplicate.
-   Valid new drafts are persisted with `syncStatus: QUEUED` and pushed onto
-   a BullMQ queue (`REPORT_INGESTION_QUEUE`); the HTTP response doesn't wait
-   for ingestion to finish.
+   `clientReportId`** (a client-generated UUID): replaying an
+   already-*confirmed* report's id is a no-op; resubmitting an
+   *unconfirmed* one's id is treated as an **edit** (SoW: "оператор
+   редагує до підтвердження") and updates the row in place — this is also
+   how the mobile app implements "edit my last report," with no separate
+   edit endpoint. Valid drafts are persisted with `syncStatus: QUEUED` and
+   pushed onto a BullMQ queue (`REPORT_INGESTION_QUEUE`); the HTTP response
+   doesn't wait for ingestion to finish.
 2. `ReportsIngestionProcessor` (BullMQ worker) picks the job up
-   asynchronously, validates the report against its claimed deal (operator
-   must match), flips `syncStatus` to `SYNCED` or `REJECTED`, and — on
-   success — calls `DealsService.advanceStatus(dealId, IN_PROGRESS)` and
-   emits `REPORT_INGESTED`. A deal reaching `COMPLETED` this way in turn
-   emits `DEAL_SETTLEMENT_TRIGGERED`, the seam where Phase 2's actual escrow
-   payout would hook in (not implemented yet — there's no financial layer).
+   asynchronously, validates the report against its claimed order (operator
+   must match, order must be `IN_WORK`/`DONE`), flips `syncStatus` to
+   `SYNCED` or `REJECTED`, and on success notifies the equipment owner and
+   emits `ORDER_REPORT_SUBMITTED`. It does **not** advance the order's
+   status — the operator's explicit start/stop-work actions and the owner's
+   report confirmation already own those transitions (see above).
 
 **Data layer:** TypeORM entities map directly to the tables in the one
 hand-written migration (`1700000000000-InitSchema.ts` — no
-`synchronize: true`, no autogenerated migrations yet, since there's only
-ever been one schema revision). Geo columns are `geography(Point,4326)`;
-`geoPointTransformer` (`common/geo/geo-point.transformer.ts`) converts
-between the app-facing `{ lat, lng }` shape and the GeoJSON TypeORM
-reads/writes — reuse it for any new geo column instead of hand-rolling
-another conversion.
+`synchronize: true`, no autogenerated migrations yet, since it has never
+been applied to a live database in this environment and was rewritten in
+place rather than layered with a second migration). Geo columns are
+`geography(Point,4326)`; `geoPointTransformer`
+(`common/geo/geo-point.transformer.ts`) converts between the app-facing
+`{ lat, lng }` shape and the GeoJSON TypeORM reads/writes — reuse it for any
+new geo column instead of hand-rolling another conversion.
 
-**Auth/authorization:** JWT (`@nestjs/jwt` + `passport-jwt`), payload is
-`{ sub: userId, role }`. Route-level access control is
-`@UseGuards(JwtAuthGuard, RolesGuard)` + `@Roles(UserRole.X)` — see any
-controller for the pattern. There's no refresh-token flow; tokens just
+**Auth/authorization:** JWT (`@nestjs/jwt` + `passport-jwt`). Accounts can
+hold multiple roles at once (SoW: "підтримка кількох ролей в одному
+акаунті"), so `UserEntity.roles` is an array column and the JWT payload is
+`{ sub: userId, role, roles }` — `role` is just `roles[0]`, kept only so
+`apps/web`'s single-role assumption keeps working unmodified. `RolesGuard`
+checks for *any* overlap between a route's `@Roles(...)` and the caller's
+`roles`, not an exact match. There's no refresh-token flow; tokens just
 expire (`JWT_EXPIRES_IN`, default 7d).
 
 ## Frontend architecture
 
-**apps/web** (React + Vite + react-router-dom): role-gated routes via
+**apps/web** (React + Vite + react-router-dom) — the **legacy marketplace
+generation**, runs against `requests/`/`matching/`/`deals/` only, untouched
+since it was built: role-gated routes via
 `RequireAuth` (wraps `<Outlet />`, optionally restricted to specific
 `UserRole`s — see `App.tsx` for the route tree). Auth state lives in
 `AuthContext`, JWT in `localStorage`. There is currently no equipment

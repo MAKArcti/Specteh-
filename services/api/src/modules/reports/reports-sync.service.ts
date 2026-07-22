@@ -30,9 +30,10 @@ export class ReportsSyncService {
 
   /**
    * Idempotent batch intake for the mobile offline queue: each draft carries
-   * a client-generated `clientReportId`, so replaying an already-synced batch
-   * (e.g. after a dropped connection ack) is safe and just echoes the prior
-   * result instead of creating a duplicate report.
+   * a client-generated `clientReportId`. Replaying an already-synced batch is
+   * a no-op; resubmitting the same id for a report that isn't confirmed yet
+   * is treated as an edit (SoW 7: "Оператор створює та редагує до
+   * підтвердження") and updates the row in place instead of rejecting it.
    */
   async syncBatch(operatorId: string, drafts: ReportDraftDto[]): Promise<ReportSyncItemResult[]> {
     const results: ReportSyncItemResult[] = [];
@@ -41,12 +42,12 @@ export class ReportsSyncService {
       const existing = await this.reportsRepository.findOneBy({
         clientReportId: draft.clientReportId,
       });
-      if (existing) {
+
+      if (existing?.confirmed) {
         results.push({
           clientReportId: draft.clientReportId,
-          accepted: existing.syncStatus !== ReportSyncStatus.REJECTED,
+          accepted: true,
           reportId: existing.id,
-          rejectionReason: existing.rejectionReason,
         });
         continue;
       }
@@ -57,22 +58,31 @@ export class ReportsSyncService {
         continue;
       }
 
-      const report = this.reportsRepository.create({
-        clientReportId: draft.clientReportId,
-        dealId: draft.dealId,
+      const fields = {
+        orderId: draft.orderId,
         operatorId,
         capturedAt: new Date(draft.capturedAt),
+        startedAt: draft.startedAt ? new Date(draft.startedAt) : undefined,
+        endedAt: draft.endedAt ? new Date(draft.endedAt) : undefined,
+        durationMin: draft.durationMin,
+        text: draft.text,
         gps: { lat: draft.lat, lng: draft.lng },
-        photoUrls: draft.photoUrls,
-        workVolume: draft.workVolume,
+        photos: draft.photos,
         engineHours: draft.engineHours,
-        notes: draft.notes,
+        fuelConsumption: draft.fuelConsumption,
+        problem: draft.problem,
+        needsService: draft.needsService,
         syncStatus: ReportSyncStatus.QUEUED,
-      });
-      const saved = await this.reportsRepository.save(report);
-      await this.ingestionQueue.add('ingest-report', { reportId: saved.id });
+      };
 
-      results.push({ clientReportId: draft.clientReportId, accepted: true, reportId: saved.id });
+      const report = existing
+        ? await this.reportsRepository.save({ ...existing, ...fields })
+        : await this.reportsRepository.save(
+            this.reportsRepository.create({ clientReportId: draft.clientReportId, ...fields }),
+          );
+
+      await this.ingestionQueue.add('ingest-report', { reportId: report.id });
+      results.push({ clientReportId: draft.clientReportId, accepted: true, reportId: report.id });
     }
 
     return results;

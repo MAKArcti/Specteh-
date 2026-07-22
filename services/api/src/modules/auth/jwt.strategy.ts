@@ -9,6 +9,7 @@ import { AuthenticatedUser } from '../../common/types/authenticated-user';
 interface JwtPayload {
   sub: string;
   role: UserRole;
+  roles: UserRole[];
 }
 
 @Injectable()
@@ -22,6 +23,6 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   validate(payload: JwtPayload): AuthenticatedUser {
-    return { id: payload.sub, role: payload.role };
+    return { id: payload.sub, role: payload.role, roles: payload.roles ?? [payload.role] };
   }
 }

@@ -1,5 +1,6 @@
 import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { UserRole } from '@spectech/shared-types';
 import * as bcrypt from 'bcrypt';
 import { UsersService } from '../users/users.service';
 import { LoginDto } from './dto/login.dto';
@@ -22,14 +23,14 @@ export class AuthService {
 
     const passwordHash = await bcrypt.hash(dto.password, SALT_ROUNDS);
     const user = await this.usersService.create({
-      role: dto.role,
+      roles: dto.roles,
       fullName: dto.fullName,
       phone: dto.phone,
       email: dto.email,
       passwordHash,
     });
 
-    return this.buildToken(user.id, user.role);
+    return this.buildToken(user.id, user.roles);
   }
 
   async login(dto: LoginDto) {
@@ -43,11 +44,12 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    return this.buildToken(user.id, user.role);
+    return this.buildToken(user.id, user.roles);
   }
 
-  private buildToken(userId: string, role: string) {
-    const accessToken = this.jwtService.sign({ sub: userId, role });
+  /** `role` (singular, first of `roles`) is kept for the legacy web JWT contract. */
+  private buildToken(userId: string, roles: UserRole[]) {
+    const accessToken = this.jwtService.sign({ sub: userId, role: roles[0], roles });
     return { accessToken };
   }
 }

@@ -1,4 +1,4 @@
-import { GeoPoint, ReportSyncStatus, WorkVolume } from '@spectech/shared-types';
+import { GeoPoint, ReportPhotos, ReportSyncStatus } from '@spectech/shared-types';
 import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 import { geoPointTransformer } from '../../common/geo/geo-point.transformer';
 
@@ -9,8 +9,8 @@ export class ReportEntity {
 
   /**
    * Client-generated UUID from the mobile offline queue. Unique so that a
-   * retried sync batch (same report shipped twice after a dropped connection)
-   * is a no-op rather than a duplicate report — see ReportsSyncService.
+   * retried sync batch is a no-op, and so the operator can edit an
+   * unconfirmed report by resubmitting the same id (see ReportsSyncService).
    */
   @Index({ unique: true })
   @Column()
@@ -18,7 +18,7 @@ export class ReportEntity {
 
   @Index()
   @Column()
-  dealId: string;
+  orderId: string;
 
   @Index()
   @Column()
@@ -30,6 +30,18 @@ export class ReportEntity {
   @CreateDateColumn()
   receivedAt: Date;
 
+  @Column({ type: 'timestamptz', nullable: true })
+  startedAt?: Date;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  endedAt?: Date;
+
+  @Column({ type: 'int', nullable: true })
+  durationMin?: number;
+
+  @Column({ type: 'text' })
+  text: string;
+
   @Column({
     type: 'geography',
     spatialFeatureType: 'Point',
@@ -38,21 +50,27 @@ export class ReportEntity {
   })
   gps: GeoPoint;
 
-  @Column({ type: 'jsonb', default: () => "'[]'" })
-  photoUrls: string[];
-
-  @Column({ type: 'jsonb' })
-  workVolume: WorkVolume;
+  @Column({ type: 'jsonb', default: () => "'{}'" })
+  photos: ReportPhotos;
 
   @Column({ type: 'float', nullable: true })
   engineHours?: number;
 
   @Column({ nullable: true })
-  notes?: string;
+  fuelConsumption?: string;
+
+  @Column({ default: false })
+  problem: boolean;
+
+  @Column({ default: false })
+  needsService: boolean;
 
   @Column({ type: 'enum', enum: ReportSyncStatus, default: ReportSyncStatus.QUEUED })
   syncStatus: ReportSyncStatus;
 
   @Column({ nullable: true })
   rejectionReason?: string;
+
+  @Column({ default: false })
+  confirmed: boolean;
 }

@@ -1,47 +1,61 @@
-import { ReportSyncStatus, WorkVolumeUnit } from './enums';
+import { ReportSyncStatus } from './enums';
 import { GeoPoint } from './geo';
 
-export interface WorkVolume {
-  value: number;
-  unit: WorkVolumeUnit;
+export interface ReportPhotos {
+  before?: string;
+  during?: string;
+  after?: string;
 }
 
 /**
- * A daily operator report as persisted server-side, after ingestion.
- * `capturedAt` is the device clock at creation time and is the field used for
- * ordering/validation — it can be far earlier than `receivedAt` when the
- * operator was offline (see offline-first principle in the ingestion pipeline).
+ * A work report (SoW 7). `capturedAt` is the device clock at creation time —
+ * it can be far earlier than `receivedAt` when the operator was offline (see
+ * the offline-first ingestion pipeline). `confirmed` is the owner's business
+ * sign-off (SoW: operator edits until confirmed, then it's locked), distinct
+ * from `syncStatus` which is the offline-queue ingestion outcome.
  */
 export interface Report {
   id: string;
   clientReportId: string;
-  dealId: string;
+  orderId: string;
   operatorId: string;
   capturedAt: string;
   receivedAt: string;
+  startedAt?: string;
+  endedAt?: string;
+  durationMin?: number;
+  text: string;
   gps: GeoPoint;
-  photoUrls: string[];
-  workVolume: WorkVolume;
+  photos: ReportPhotos;
   engineHours?: number;
-  notes?: string;
+  fuelConsumption?: string;
+  problem: boolean;
+  needsService: boolean;
   syncStatus: ReportSyncStatus;
+  rejectionReason?: string;
+  confirmed: boolean;
 }
 
 /**
- * What the mobile app queues locally (SQLite) while offline and later ships
- * in a ReportSyncBatchRequest. `clientReportId` is a client-generated UUID
- * used as the idempotency key end-to-end, since connectivity gaps mean the
- * same batch may be retried more than once.
+ * What the mobile app queues locally while offline and later ships in a
+ * ReportSyncBatchRequest. `clientReportId` is a client-generated UUID used
+ * as the idempotency key end-to-end, since connectivity gaps mean the same
+ * batch may be retried more than once.
  */
 export interface ReportDraft {
   clientReportId: string;
-  dealId: string;
+  orderId: string;
   capturedAt: string;
+  startedAt?: string;
+  endedAt?: string;
+  durationMin?: number;
+  text: string;
   gps: GeoPoint;
-  photoUrls: string[];
-  workVolume: WorkVolume;
+  photos: ReportPhotos;
   engineHours?: number;
-  notes?: string;
+  fuelConsumption?: string;
+  problem: boolean;
+  needsService: boolean;
 }
 
 export interface ReportSyncBatchRequest {

@@ -20,7 +20,7 @@ export class UsersService {
   }
 
   create(data: {
-    role: UserRole;
+    roles: UserRole[];
     fullName: string;
     phone: string;
     email?: string;
@@ -28,5 +28,17 @@ export class UsersService {
   }): Promise<UserEntity> {
     const user = this.usersRepository.create(data);
     return this.usersRepository.save(user);
+  }
+
+  findManyById(ids: string[]): Promise<UserEntity[]> {
+    if (ids.length === 0) return Promise.resolve([]);
+    return this.usersRepository.createQueryBuilder('u').whereInIds(ids).getMany();
+  }
+
+  findOperators(): Promise<UserEntity[]> {
+    return this.usersRepository
+      .createQueryBuilder('u')
+      .where(':role = ANY(u.roles)', { role: UserRole.OPERATOR })
+      .getMany();
   }
 }

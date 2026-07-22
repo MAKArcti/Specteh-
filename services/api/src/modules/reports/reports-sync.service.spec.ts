@@ -1,16 +1,17 @@
-import { ReportSyncStatus, WorkVolumeUnit } from '@spectech/shared-types';
 import { ReportDraftDto } from './dto/report-draft.dto';
 import { ReportsSyncService } from './reports-sync.service';
 
 function buildDraft(overrides: Partial<ReportDraftDto> = {}): ReportDraftDto {
   return Object.assign(new ReportDraftDto(), {
     clientReportId: '11111111-1111-1111-1111-111111111111',
-    dealId: '22222222-2222-2222-2222-222222222222',
+    orderId: '22222222-2222-2222-2222-222222222222',
     capturedAt: new Date(Date.now() - 60_000).toISOString(),
+    text: 'Земляні роботи виконано',
     lat: 50.45,
     lng: 30.52,
-    photoUrls: ['https://example.com/photo.jpg'],
-    workVolume: { value: 8, unit: WorkVolumeUnit.HOURS },
+    photos: { before: 'file://before.jpg' },
+    problem: false,
+    needsService: false,
     ...overrides,
   });
 }
@@ -40,19 +41,32 @@ describe('ReportsSyncService', () => {
     expect(queue.add).toHaveBeenCalledWith('ingest-report', { reportId: 'server-generated-id' });
   });
 
-  it('is idempotent on clientReportId: a replayed batch does not create a duplicate', async () => {
-    repository.findOneBy.mockResolvedValue({
-      id: 'server-generated-id',
-      syncStatus: ReportSyncStatus.SYNCED,
-    });
+  it('is idempotent on an already-confirmed report: a replayed batch does not touch the queue', async () => {
+    repository.findOneBy.mockResolvedValue({ id: 'server-generated-id', confirmed: true });
 
     const results = await service.syncBatch('operator-1', [buildDraft()]);
 
     expect(results).toEqual([
-      { clientReportId: buildDraft().clientReportId, accepted: true, reportId: 'server-generated-id', rejectionReason: undefined },
+      { clientReportId: buildDraft().clientReportId, accepted: true, reportId: 'server-generated-id' },
     ]);
     expect(repository.save).not.toHaveBeenCalled();
     expect(queue.add).not.toHaveBeenCalled();
+  });
+
+  it('treats a resubmission of an unconfirmed report as an edit, not a duplicate', async () => {
+    const existing = {
+      id: 'server-generated-id',
+      clientReportId: buildDraft().clientReportId,
+      confirmed: false,
+      text: 'old text',
+    };
+    repository.findOneBy.mockResolvedValue(existing);
+
+    const results = await service.syncBatch('operator-1', [buildDraft({ text: 'updated text' })]);
+
+    expect(results[0].accepted).toBe(true);
+    expect(repository.save).toHaveBeenCalledWith(expect.objectContaining({ text: 'updated text' }));
+    expect(queue.add).toHaveBeenCalledTimes(1);
   });
 
   it('rejects a report with an invalid capturedAt without touching the queue', async () => {

@@ -6,8 +6,8 @@ export class UserEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'enum', enum: UserRole })
-  role: UserRole;
+  @Column({ type: 'enum', enum: UserRole, array: true })
+  roles: UserRole[];
 
   @Column()
   fullName: string;

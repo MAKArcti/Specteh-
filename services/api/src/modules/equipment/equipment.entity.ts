@@ -38,6 +38,38 @@ export class EquipmentEntity {
   @Column({ type: 'int', default: 0 })
   ratingCount: number;
 
+  // "Електронний техпаспорт" fields (SoW 4.2) — nullable because the legacy
+  // web create-listing flow doesn't populate them (see CreateEquipmentDto).
+  @Column({ nullable: true })
+  brand?: string;
+
+  @Column({ nullable: true })
+  model?: string;
+
+  @Column({ nullable: true })
+  serialNumber?: string;
+
+  @Column({ nullable: true })
+  photoUrl?: string;
+
+  @Column({ type: 'float', nullable: true })
+  engineHours?: number;
+
+  @Column({ nullable: true })
+  fuelConsumption?: string;
+
+  @Column({ nullable: true })
+  oilStatus?: string;
+
+  @Column({ nullable: true })
+  mass?: string;
+
+  @Column({ nullable: true })
+  capacity?: string;
+
+  @Column({ nullable: true })
+  conditions?: string;
+
   @CreateDateColumn()
   createdAt: Date;
 }

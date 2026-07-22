@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   IsArray,
+  IsBoolean,
   IsDateString,
   IsNumber,
   IsOptional,
@@ -10,15 +11,19 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
-import { WorkVolumeUnit } from '@spectech/shared-types';
 
-export class WorkVolumeDto {
-  @IsNumber()
-  @Min(0)
-  value: number;
-
+export class ReportPhotosDto {
+  @IsOptional()
   @IsString()
-  unit: WorkVolumeUnit;
+  before?: string;
+
+  @IsOptional()
+  @IsString()
+  during?: string;
+
+  @IsOptional()
+  @IsString()
+  after?: string;
 }
 
 export class ReportDraftDto {
@@ -26,10 +31,26 @@ export class ReportDraftDto {
   clientReportId: string;
 
   @IsUUID()
-  dealId: string;
+  orderId: string;
 
   @IsDateString()
   capturedAt: string;
+
+  @IsOptional()
+  @IsDateString()
+  startedAt?: string;
+
+  @IsOptional()
+  @IsDateString()
+  endedAt?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  durationMin?: number;
+
+  @IsString()
+  text: string;
 
   @IsNumber()
   @Min(-90)
@@ -41,13 +62,9 @@ export class ReportDraftDto {
   @Max(180)
   lng: number;
 
-  @IsArray()
-  @IsString({ each: true })
-  photoUrls: string[];
-
   @ValidateNested()
-  @Type(() => WorkVolumeDto)
-  workVolume: WorkVolumeDto;
+  @Type(() => ReportPhotosDto)
+  photos: ReportPhotosDto;
 
   @IsOptional()
   @IsNumber()
@@ -56,7 +73,13 @@ export class ReportDraftDto {
 
   @IsOptional()
   @IsString()
-  notes?: string;
+  fuelConsumption?: string;
+
+  @IsBoolean()
+  problem: boolean;
+
+  @IsBoolean()
+  needsService: boolean;
 }
 
 export class ReportSyncBatchDto {

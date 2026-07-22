@@ -8,6 +8,8 @@ import { AuthModule } from './modules/auth/auth.module';
 import { DealsModule } from './modules/deals/deals.module';
 import { EquipmentModule } from './modules/equipment/equipment.module';
 import { MatchingModule } from './modules/matching/matching.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
+import { OrdersModule } from './modules/orders/orders.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { RequestsModule } from './modules/requests/requests.module';
 import { UsersModule } from './modules/users/users.module';
@@ -32,6 +34,8 @@ import { UsersModule } from './modules/users/users.module';
     RequestsModule,
     MatchingModule,
     DealsModule,
+    NotificationsModule,
+    OrdersModule,
     ReportsModule,
   ],
 })

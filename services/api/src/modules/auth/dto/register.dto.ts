@@ -1,9 +1,11 @@
 import { UserRole } from '@spectech/shared-types';
-import { IsEmail, IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
+import { ArrayMinSize, IsArray, IsEmail, IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
 
 export class RegisterDto {
-  @IsEnum(UserRole)
-  role: UserRole;
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsEnum(UserRole, { each: true })
+  roles: UserRole[];
 
   @IsString()
   fullName: string;

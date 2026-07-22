@@ -1,9 +1,16 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { EquipmentStatus, EquipmentType, GeoPoint } from '@spectech/shared-types';
+import {
+  EquipmentStatus,
+  EquipmentType,
+  GeoPoint,
+  JournalEntryKind,
+} from '@spectech/shared-types';
 import { Repository } from 'typeorm';
-import { EquipmentEntity } from './equipment.entity';
 import { CreateEquipmentDto } from './dto/create-equipment.dto';
+import { EquipmentJournalEntity } from './equipment-journal.entity';
+import { EquipmentOperatorEntity } from './equipment-operator.entity';
+import { EquipmentEntity } from './equipment.entity';
 
 export interface EquipmentCandidate {
   equipment: EquipmentEntity;
@@ -15,25 +22,95 @@ export class EquipmentService {
   constructor(
     @InjectRepository(EquipmentEntity)
     private readonly equipmentRepository: Repository<EquipmentEntity>,
+    @InjectRepository(EquipmentOperatorEntity)
+    private readonly operatorsRepository: Repository<EquipmentOperatorEntity>,
+    @InjectRepository(EquipmentJournalEntity)
+    private readonly journalRepository: Repository<EquipmentJournalEntity>,
   ) {}
 
-  create(ownerId: string, dto: CreateEquipmentDto): Promise<EquipmentEntity> {
+  async create(ownerId: string, dto: CreateEquipmentDto): Promise<EquipmentEntity> {
     const equipment = this.equipmentRepository.create({
       ownerId,
       type: dto.type,
       label: dto.label,
       pricePerHour: dto.pricePerHour,
       location: { lat: dto.lat, lng: dto.lng },
+      brand: dto.brand,
+      model: dto.model,
+      serialNumber: dto.serialNumber,
+      photoUrl: dto.photoUrl,
+      mass: dto.mass,
+      capacity: dto.capacity,
+      conditions: dto.conditions,
     });
-    return this.equipmentRepository.save(equipment);
+    const saved = await this.equipmentRepository.save(equipment);
+    if (dto.operatorId) {
+      await this.assignOperator(saved.id, dto.operatorId);
+    }
+    return saved;
   }
 
   findById(id: string): Promise<EquipmentEntity | null> {
     return this.equipmentRepository.findOneBy({ id });
   }
 
+  /** Renter-facing "Маркет" browse: every non-broken machine, optionally filtered by type. */
+  findBrowsable(type?: EquipmentType): Promise<EquipmentEntity[]> {
+    const qb = this.equipmentRepository
+      .createQueryBuilder('equipment')
+      .where('equipment.status != :broken', { broken: EquipmentStatus.BROKEN })
+      .orderBy('equipment.createdAt', 'DESC');
+    if (type) qb.andWhere('equipment.type = :type', { type });
+    return qb.getMany();
+  }
+
+  findOwnedBy(ownerId: string): Promise<EquipmentEntity[]> {
+    return this.equipmentRepository.find({ where: { ownerId }, order: { createdAt: 'DESC' } });
+  }
+
+  findAvailableOfType(type: EquipmentType): Promise<EquipmentEntity[]> {
+    return this.equipmentRepository.find({
+      where: { type, status: EquipmentStatus.AVAILABLE },
+    });
+  }
+
   setStatus(id: string, status: EquipmentStatus): Promise<void> {
     return this.equipmentRepository.update({ id }, { status }).then(() => undefined);
+  }
+
+  async assignedOperatorIds(equipmentId: string): Promise<string[]> {
+    const rows = await this.operatorsRepository.find({ where: { equipmentId } });
+    return rows.map((r) => r.operatorId);
+  }
+
+  async assignOperator(equipmentId: string, operatorId: string): Promise<void> {
+    const existing = await this.operatorsRepository.findOneBy({ equipmentId, operatorId });
+    if (existing) {
+      throw new ConflictException('Operator already assigned to this equipment');
+    }
+    await this.operatorsRepository.save(this.operatorsRepository.create({ equipmentId, operatorId }));
+  }
+
+  async removeOperator(equipmentId: string, operatorId: string): Promise<void> {
+    await this.operatorsRepository.delete({ equipmentId, operatorId });
+  }
+
+  addJournalEntry(
+    equipmentId: string,
+    authorId: string,
+    authorLabel: string,
+    kind: JournalEntryKind,
+    text: string,
+  ): Promise<EquipmentJournalEntity> {
+    const entry = this.journalRepository.create({ equipmentId, authorId, authorLabel, kind, text });
+    return this.journalRepository.save(entry);
+  }
+
+  findJournal(equipmentId: string): Promise<EquipmentJournalEntity[]> {
+    return this.journalRepository.find({
+      where: { equipmentId },
+      order: { createdAt: 'DESC' },
+    });
   }
 
   /**
