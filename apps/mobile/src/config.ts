@@ -4,4 +4,5 @@
 export const API_BASE_URL = 'http://10.0.2.2:3000';
 
 export const REPORT_QUEUE_STORAGE_KEY = 'spectech.report_queue';
+export const WORK_TIMER_STORAGE_KEY = 'spectech.work_timer';
 export const AUTH_TOKEN_STORAGE_KEY = 'spectech.auth_token';

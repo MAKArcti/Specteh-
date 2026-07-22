@@ -1,18 +1,18 @@
 {
   "expo": {
-    "name": "Spectech Operator",
-    "slug": "spectech-operator",
-    "scheme": "spectech-operator",
+    "name": "Spectech",
+    "slug": "spectech",
+    "scheme": "spectech",
     "version": "0.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.spectech.operator"
+      "bundleIdentifier": "com.spectech.app"
     },
     "android": {
-      "package": "com.spectech.operator",
+      "package": "com.spectech.app",
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",

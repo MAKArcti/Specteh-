@@ -1,48 +1,54 @@
-import type { ReportDraft, ReportSyncItemResult } from '@spectech/shared-types';
-import { apiRequest } from './client';
+import type {
+  Report,
+  ReportDraft,
+  ReportSyncBatchResponse,
+  ReportSyncItemResult,
+} from '@spectech/shared-types';
+import { api } from './client';
 
-// The shared `ReportDraft` type nests `gps: { lat, lng }`, but the backend's
-// ReportDraftDto (services/api/src/modules/reports/dto/report-draft.dto.ts)
-// validates flat `lat`/`lng` fields instead. This is the exact shape the wire
-// request needs; `toWireReportDraft` below bridges the two.
+/**
+ * The shared `ReportDraft` interface nests `gps: { lat, lng }`, but the
+ * backend's ReportDraftDto (services/api/src/modules/reports/dto/report-draft.dto.ts)
+ * validates flat `lat`/`lng` fields instead (class-validator decorates
+ * primitives directly) — same established wrinkle as apps/web's request
+ * flow (see repo root CLAUDE.md). Everything else on the draft, including
+ * `photos`, stays nested since the DTO validates it with `@ValidateNested`.
+ * The persisted/queued shape stays the nested `ReportDraft`; only this call
+ * boundary flattens it.
+ */
 interface WireReportDraft {
   clientReportId: string;
-  dealId: string;
+  orderId: string;
   capturedAt: string;
+  startedAt?: string;
+  endedAt?: string;
+  durationMin?: number;
+  text: string;
   lat: number;
   lng: number;
-  photoUrls: string[];
-  workVolume: ReportDraft['workVolume'];
+  photos: ReportDraft['photos'];
   engineHours?: number;
-  notes?: string;
-}
-
-interface ReportSyncBatchResponse {
-  results: ReportSyncItemResult[];
+  fuelConsumption?: string;
+  problem: boolean;
+  needsService: boolean;
 }
 
 function toWireReportDraft(draft: ReportDraft): WireReportDraft {
-  return {
-    clientReportId: draft.clientReportId,
-    dealId: draft.dealId,
-    capturedAt: draft.capturedAt,
-    lat: draft.gps.lat,
-    lng: draft.gps.lng,
-    photoUrls: draft.photoUrls,
-    workVolume: draft.workVolume,
-    engineHours: draft.engineHours,
-    notes: draft.notes,
-  };
+  const { gps, ...rest } = draft;
+  return { ...rest, lat: gps.lat, lng: gps.lng };
 }
 
-export async function syncReportBatch(
-  token: string,
-  reports: ReportDraft[],
-): Promise<ReportSyncItemResult[]> {
-  const response = await apiRequest<ReportSyncBatchResponse>('/reports/sync', {
-    method: 'POST',
-    token,
-    body: { reports: reports.map(toWireReportDraft) },
+export async function syncReportBatch(reports: ReportDraft[]): Promise<ReportSyncItemResult[]> {
+  const response = await api.post<ReportSyncBatchResponse>('/reports/sync', {
+    reports: reports.map(toWireReportDraft),
   });
   return response.results;
+}
+
+export function getReportsForOrder(orderId: string) {
+  return api.get<Report[]>(`/orders/${orderId}/reports`);
+}
+
+export function confirmReport(id: string) {
+  return api.post<Report>(`/reports/${id}/confirm`);
 }

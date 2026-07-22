@@ -1,12 +1,27 @@
-import { apiRequest } from './client';
+import type { UserRole } from '@spectech/shared-types';
+import { api } from './client';
 
-export interface LoginResponse {
+export interface AuthResponse {
   accessToken: string;
 }
 
-export async function login(phone: string, password: string): Promise<LoginResponse> {
-  return apiRequest<LoginResponse>('/auth/login', {
-    method: 'POST',
-    body: { phone, password },
-  });
+export interface LoginPayload {
+  phone: string;
+  password: string;
+}
+
+export interface RegisterPayload {
+  roles: UserRole[];
+  fullName: string;
+  phone: string;
+  email?: string;
+  password: string;
+}
+
+export function login(payload: LoginPayload) {
+  return api.post<AuthResponse>('/auth/login', payload);
+}
+
+export function register(payload: RegisterPayload) {
+  return api.post<AuthResponse>('/auth/register', payload);
 }

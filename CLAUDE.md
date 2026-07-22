@@ -51,7 +51,7 @@ architectural decisions, not just when writing code:
 
 ```
 apps/web        @spectech/web      React + Vite customer/equipment-owner web app
-apps/mobile     @spectech/mobile   Expo/React Native operator app (offline report queue)
+apps/mobile     @spectech/mobile   Expo/React Native multi-role rental+fleet app (offline reports)
 services/api    @spectech/api      NestJS backend — modular monolith
 packages/shared-types              @spectech/shared-types — DTOs/enums shared by all three
 infra/          docker-compose.yml — Postgres+PostGIS and Redis for local dev
@@ -296,26 +296,72 @@ implicitly through the matching engine when a customer creates a request.
 Core flow: register/login → (owner) add equipment / (customer) create
 request → ranked offers → confirm deal → deal detail.
 
-**apps/mobile** (Expo + React Native + TypeScript, plain `App.tsx` +
-`@react-navigation/native-stack`, no expo-router): operator-only — no
-registration screen, operators are assumed pre-provisioned. The offline
-report queue is the load-bearing piece:
-- `src/storage/reportQueue.ts` persists pending `ReportDraft`s to
-  `AsyncStorage` under `spectech.report_queue` — not in-memory state, so a
-  submitted report survives an app kill before it ever reaches the network.
-- Submitting a report (`ReportSubmissionScreen`) enqueues locally first,
-  with zero network dependency, using `capturedAt` set to the device clock
-  at submission time (which can be hours/days before the eventual sync).
-  A best-effort background sync is *then* attempted opportunistically.
-- `PendingReportsScreen` lists the queue and has a manual "Sync now" button
-  (`useReportQueue`) — don't rely on connectivity auto-detection
-  (`useAutoSyncOnReconnect`, via NetInfo) alone; the operator must always be
-  able to force a retry.
-- Reconciliation after a sync call: accepted `clientReportId`s are removed
-  from the queue; rejected ones are kept and annotated with the server's
-  `rejectionReason` so the operator can see and retry/edit them.
-- No real media upload pipeline yet — `photoUrls` stores local `file://`
-  URIs from `expo-image-picker` as placeholders.
+**apps/mobile** (Expo + React Native + TypeScript) — the **SoW rental+fleet
+generation**, runs against `orders/`/`chat`/`notifications`/the expanded
+`equipment/`/the reworked `reports/`. Rebuilt from scratch as a full
+multi-role app (the previous version was operator-only); every screen and
+business rule mirrors the client-approved interactive prototype
+("Spectech App.dc.html", imported via the Claude Design MCP) and the
+accompanying SoW.
+
+- **Navigation** (`src/navigation/`): `RootNavigator` picks `AuthNavigator`
+  (Login/Register) or `AppStack` based on whether a token is stored.
+  `AppStack` (native-stack) houses `MainTabs` plus every detail/form screen,
+  so pushes work uniformly regardless of which tab you're on. `MainTabs`
+  (bottom-tabs) is **built dynamically from the logged-in user's `roles`**
+  rather than assuming all three are present — a real account may hold only
+  a subset, unlike the prototype's single all-roles demo persona: "Маркет"
+  and "Замовлення" show only with the `customer` role, "Звіти" only with
+  `operator`, "Техніка" only with `equipment_owner`.
+- **Screens** (`src/screens/`, 17 total): `LoginScreen`, `RegisterScreen`
+  (multi-select role picker — registration is back in scope per the SoW's
+  base auth module, unlike the old operator-only assumption),
+  `MarketListScreen` + `EquipmentDetailScreen` (renter browse),
+  `OrdersListScreen` + `CreateOrderScreen` + `OrderDetailScreen` (4-step
+  status timeline, conditional owner/renter action buttons) +
+  `AssignOrderScreen` + `ChatScreen`, `FleetScreen` + `AddEquipmentScreen` +
+  `PassportScreen` (assigned operators + maintenance journal), `ReportsScreen`
+  (active-work timer + report history + the pending-sync queue, folded in as
+  a section rather than a separate screen) + `ReportCreateScreen`,
+  `ProfileScreen`, `NotificationsScreen`.
+- **Offline report queue** (`src/storage/reportQueue.ts`): persists pending
+  `ReportDraft`s to `AsyncStorage`, upserted by `clientReportId` — not
+  in-memory state, so a submitted report survives an app kill before it ever
+  reaches the network, and re-enqueuing the same id (editing an unconfirmed
+  report) replaces the queued draft instead of duplicating it.
+  `ReportCreateScreen` enqueues locally first with zero network dependency,
+  using `capturedAt` set to the device clock at fill-in time (which can be
+  hours/days before the eventual sync); a best-effort background sync is
+  *then* attempted opportunistically (`useAutoSyncOnReconnect`, via NetInfo),
+  plus a manual "Sync now" affordance in `ReportsScreen` — don't rely on
+  connectivity auto-detection alone. Reconciliation after a sync call:
+  accepted `clientReportId`s are removed from the queue; rejected ones are
+  kept and annotated with the server's `rejectionReason`. `src/api/reports.ts`
+  flattens `gps: {lat,lng}` to wire-level `lat`/`lng` at the call boundary
+  (same established pattern as `apps/web/src/api/requests.ts` — see the
+  shared-types section above). No real media upload pipeline yet — `photos`
+  stores local `file://` URIs from `expo-image-picker` as placeholders.
+- **Local work timer** (`src/storage/workTimer.ts`): "Почати роботу" /
+  "Завершити роботу" on an `in_work` order is a client-only start/stop
+  timestamp capture feeding `startedAt`/`endedAt`/`durationMin` into the next
+  report — it does not call the API, since the order is already `in_work`
+  server-side by the time an operator can act on it (see the backend orders
+  flow above).
+- **No `GET /users/me` endpoint exists.** Login returns only
+  `{ accessToken }`, so `src/utils/jwt.ts` decodes the JWT payload
+  client-side (hand-rolled base64 decode — Hermes doesn't reliably ship a
+  global `atob`) to get `sub`/`roles` for tab gating. This never verifies
+  the signature and is **never used for authorization** — every guard is
+  still enforced server-side; it's purely a UI-convenience read. `fullName`/
+  `phone` (for the Profile screen and displaying "you" in orders/chat) are
+  cached locally per-user-id (`src/storage/profileStorage.ts`) from the
+  register form, since there's no profile-fetch endpoint either; a fresh
+  login on a new device falls back to showing the phone number.
+- Owner/renter/operator identities on `Order`/`Equipment` are raw
+  `ownerId`/`renterId` UUIDs with no name-lookup endpoint other than
+  `GET /users/operators` (owner-only) — screens show "Ви" when an id matches
+  the current user, resolve operator names via that roster where available,
+  and otherwise fall back to a shortened id.
 
 Both `apps/web` and `apps/mobile` have their own `.eslintrc.json`:
 `apps/web`'s extends the root config (browser env + JSX parserOptions

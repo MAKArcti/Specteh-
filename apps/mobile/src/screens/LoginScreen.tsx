@@ -1,18 +1,13 @@
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React, { useState } from 'react';
-import {
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-} from 'react-native';
+import { KeyboardAvoidingView, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import Button from '@/components/Button';
+import TextField from '@/components/TextField';
 import { useAuth } from '@/context/AuthContext';
-import type { RootStackParamList } from '@/navigation/types';
+import type { AuthStackParamList } from '@/navigation/types';
+import { colors, fontSizes, spacing } from '@/theme';
 
-type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
+type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
 
 export default function LoginScreen({ navigation }: Props) {
   const { login } = useAuth();
@@ -26,9 +21,8 @@ export default function LoginScreen({ navigation }: Props) {
     setIsSubmitting(true);
     try {
       await login(phone.trim(), password);
-      navigation.replace('DealList');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed');
+      setError(err instanceof Error ? err.message : 'Помилка входу');
     } finally {
       setIsSubmitting(false);
     }
@@ -39,62 +33,65 @@ export default function LoginScreen({ navigation }: Props) {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <Text style={styles.title}>Spectech Operator</Text>
-      <Text style={styles.label}>Phone</Text>
-      <TextInput
-        style={styles.input}
+      <Text style={styles.title}>Spectech</Text>
+      <Text style={styles.subtitle}>Платформа для спецтехніки</Text>
+
+      <TextField
+        label="Телефон"
         value={phone}
         onChangeText={setPhone}
         keyboardType="phone-pad"
         autoCapitalize="none"
         placeholder="+380..."
-        testID="phone-input"
       />
-      <Text style={styles.label}>Password</Text>
-      <TextInput
-        style={styles.input}
+      <TextField
+        label="Пароль"
         value={password}
         onChangeText={setPassword}
         secureTextEntry
         autoCapitalize="none"
-        testID="password-input"
       />
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      <TouchableOpacity
-        style={[styles.button, isSubmitting && styles.buttonDisabled]}
+
+      <Button
+        label="Увійти"
         onPress={handleLogin}
-        disabled={isSubmitting || !phone || !password}
-      >
-        {isSubmitting ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.buttonText}>Log in</Text>
-        )}
-      </TouchableOpacity>
+        loading={isSubmitting}
+        disabled={!phone || !password}
+        style={styles.loginButton}
+      />
+
+      <View style={styles.registerRow}>
+        <Text style={styles.registerText}>Немає акаунту?</Text>
+        <TouchableOpacity onPress={() => navigation.navigate('Register')}>
+          <Text style={styles.registerLink}> Зареєструватися</Text>
+        </TouchableOpacity>
+      </View>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', padding: 24, backgroundColor: '#fff' },
-  title: { fontSize: 28, fontWeight: '700', marginBottom: 32, textAlign: 'center' },
-  label: { fontSize: 14, color: '#444', marginBottom: 4, marginTop: 12 },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
+  container: { flex: 1, justifyContent: 'center', padding: spacing.xl, backgroundColor: colors.bg },
+  title: {
+    fontSize: fontSizes.xxl,
+    fontWeight: '800',
+    color: colors.text,
+    textAlign: 'center',
   },
-  error: { color: '#c0392b', marginTop: 12 },
-  button: {
-    marginTop: 24,
-    backgroundColor: '#1a5276',
-    borderRadius: 8,
-    paddingVertical: 14,
-    alignItems: 'center',
+  subtitle: {
+    fontSize: fontSizes.md,
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginBottom: spacing.xxl,
   },
-  buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  error: { color: colors.danger, marginBottom: spacing.md },
+  loginButton: { marginTop: spacing.sm },
+  registerRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: spacing.xl,
+  },
+  registerText: { color: colors.textMuted, fontSize: fontSizes.sm },
+  registerLink: { color: colors.accent, fontSize: fontSizes.sm, fontWeight: '700' },
 });

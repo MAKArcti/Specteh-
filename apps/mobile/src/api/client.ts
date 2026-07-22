@@ -10,16 +10,24 @@ export class ApiError extends Error {
   }
 }
 
-interface RequestOptions {
-  method?: 'GET' | 'POST';
-  body?: unknown;
-  token?: string | null;
+// Cached in memory (not read from SecureStore per-call, since that's async
+// and every screen would otherwise need to thread the token through). Kept
+// in sync with storage by AuthContext on boot, login, and logout.
+let currentToken: string | null = null;
+
+export function setAuthToken(token: string | null): void {
+  currentToken = token;
 }
 
-export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+interface RequestOptions {
+  method?: 'GET' | 'POST' | 'DELETE';
+  body?: unknown;
+}
+
+async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (options.token) {
-    headers.Authorization = `Bearer ${options.token}`;
+  if (currentToken) {
+    headers.Authorization = `Bearer ${currentToken}`;
   }
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -38,3 +46,9 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 
   return data as T;
 }
+
+export const api = {
+  get: <T>(path: string) => request<T>(path),
+  post: <T>(path: string, body?: unknown) => request<T>(path, { method: 'POST', body }),
+  del: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+};
