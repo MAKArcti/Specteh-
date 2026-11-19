@@ -28,8 +28,9 @@ export class EquipmentController {
 
   @Post()
   @Roles(UserRole.EQUIPMENT_OWNER)
-  create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateEquipmentDto) {
-    return this.equipmentService.create(user.id, dto);
+  async create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateEquipmentDto) {
+    const equipment = await this.equipmentService.create(user.id, dto);
+    return this.toDto(equipment);
   }
 
   /** Renter-facing "Маркет" browse (SoW 2.1 "Переглядає доступну техніку"). */
